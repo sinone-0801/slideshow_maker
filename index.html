@@ -268,7 +268,17 @@
             createButton.disabled = true;
 
             try {
-                // WebM形式で一時的に動画を作成
+                // 音声コンテキストの作成
+                const audioContext = new AudioContext();
+                const audioDestination = audioContext.createMediaStreamDestination();
+                
+                // BGMの設定
+                const audioElement = new Audio(audio);
+                const audioSource = audioContext.createMediaElementSource(audioElement);
+                audioSource.connect(audioDestination);
+                audioSource.connect(audioContext.destination); // プレビュー用
+
+                // Canvas設定
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 const firstImg = new Image();
@@ -278,9 +288,18 @@
                 canvas.width = firstImg.width;
                 canvas.height = firstImg.height;
 
-                const stream = canvas.captureStream(30);
-                const mediaRecorder = new MediaRecorder(stream, {
-                    mimeType: 'video/webm;codecs=vp8,opus'
+                // ビデオストリームの取得
+                const videoStream = canvas.captureStream(30);
+                
+                // ビデオとオーディオのストリームを結合
+                const combinedStream = new MediaStream([
+                    ...videoStream.getVideoTracks(),
+                    ...audioDestination.stream.getAudioTracks()
+                ]);
+
+                const mediaRecorder = new MediaRecorder(combinedStream, {
+                    mimeType: 'video/webm;codecs=vp8,opus',
+                    videoBitsPerSecond: 2500000
                 });
 
                 const chunks = [];
@@ -294,21 +313,30 @@
                         <video controls src="${videoUrl}" style="max-width: 100%"></video>
                         <br>
                         <a href="${videoUrl}" download="slideshow.webm">動画をダウンロード</a>
-                        <p>※ 動画はWebM形式で保存されます。MP4への変換が必要な場合は、
-                        <a href="https://cloudconvert.com/webm-to-mp4" target="_blank">オンライン変換ツール</a>
-                        をご利用ください。</p>
                     `;
                     
                     progress.style.display = 'none';
                     createButton.disabled = false;
+
+                    // ストリームのクリーンアップ
+                    videoStream.getTracks().forEach(track => track.stop());
+                    audioDestination.stream.getTracks().forEach(track => track.stop());
                 };
 
+                // 録画開始
                 mediaRecorder.start();
+                audioElement.currentTime = 0;
+                audioElement.play();
 
-                // 以下、画像処理とトランジションの部分は前回と同じ
                 const frameDuration = parseFloat(durationInput.value) * 1000;
                 const transitionDuration = 1000;
                 const fps = 30;
+
+                // 総時間を計算（画像表示時間 + トランジション時間）
+                const totalDuration = (images.length * frameDuration) - ((images.length - 1) * transitionDuration);
+
+                // BGMのループ設定
+                audioElement.loop = true;
 
                 for (let i = 0; i < images.length; i++) {
                     const currentImg = new Image();
@@ -333,7 +361,9 @@
                     }
                 }
 
+                // 録画停止
                 mediaRecorder.stop();
+                audioElement.pause();
 
             } catch (error) {
                 console.error('動画作成エラー:', error);
