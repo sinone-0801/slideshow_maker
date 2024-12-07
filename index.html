@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>スライドショー動画メーカー</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        #preview {
+            max-width: 100%;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        #progress {
+            display: none;
+            margin: 10px 0;
+        }
+        .image-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .image-item {
+            position: relative;
+            border: 1px solid #ccc;
+            padding: 5px;
+        }
+        .image-item img {
+            max-width: 150px;
+            max-height: 150px;
+        }
+        .image-controls {
+            display: flex;
+            gap: 5px;
+            margin-top: 5px;
+        }
+        .processing-message {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+        }
+        .sortable-ghost {
+            opacity: 0.4;
+        }
+    </style>
+</head>
+<body>
+    <h1>スライドショー動画メーカー</h1>
+    
+    <div class="container">
+        <h2>1. 画像をアップロード</h2>
+        <input type="file" id="imageInput" multiple accept="image/*">
+        <div id="imagePreview" class="image-list"></div>
+    </div>
+
+    <div class="container">
+        <h2>2. BGMをアップロード</h2>
+        <input type="file" id="audioInput" accept="audio/*">
+    </div>
+
+    <div class="container">
+        <h2>3. 設定</h2>
+        <label>
+            1枚あたりの表示時間（秒）:
+            <input type="number" id="duration" value="3" min="1" max="10">
+        </label>
+    </div>
+
+    <div class="controls">
+        <button id="createButton">動画を作成</button>
+        <div id="progress">
+            <p>処理中...</p>
+            <progress value="0" max="100"></progress>
+        </div>
+    </div>
+
+    <div id="result"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.14.0/Sortable.min.js"></script>
+    <!-- FFmpeg.jsの正しいCDN -->
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+    <script src="https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js"></script>
+
+    <script>
+        let images = [];
+        let audio = null;
+        const imageInput = document.getElementById('imageInput');
+        const audioInput = document.getElementById('audioInput');
+        const createButton = document.getElementById('createButton');
+        const progress = document.getElementById('progress');
+        const imagePreview = document.getElementById('imagePreview');
+        const result = document.getElementById('result');
+        const durationInput = document.getElementById('duration');
+
+        // ドラッグ&ドロップによる並び替え機能を初期化
+        new Sortable(imagePreview, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onSort: () => {
+                // 並び替え後に画像配列を更新
+                const newImages = [];
+                imagePreview.querySelectorAll('.image-item').forEach(item => {
+                    newImages.push(images[parseInt(item.dataset.index)]);
+                });
+                images = newImages;
+            }
+        });
+
+        // 画像アップロード処理
+        imageInput.addEventListener('change', async (e) => {
+            images = [];
+            imagePreview.innerHTML = '';
+            
+            for (let i = 0; i < e.target.files.length; i++) {
+                const file = e.target.files[i];
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const container = document.createElement('div');
+                        container.className = 'image-item';
+                        container.dataset.index = images.length;
+
+                        const img = new Image();
+                        img.src = event.target.result;
+                        container.appendChild(img);
+
+                        const controls = document.createElement('div');
+                        controls.className = 'image-controls';
+                        controls.innerHTML = `
+                            <button onclick="moveImage(${images.length}, -1)">↑</button>
+                            <button onclick="moveImage(${images.length}, 1)">↓</button>
+                            <button onclick="removeImage(${images.length})">×</button>
+                        `;
+                        container.appendChild(controls);
+
+                        imagePreview.appendChild(container);
+                        images.push(event.target.result);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            }
+        });
+
+        // 画像の並び替え関数
+        function moveImage(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex >= 0 && newIndex < images.length) {
+                // 画像配列の並び替え
+                const temp = images[index];
+                images[index] = images[newIndex];
+                images[newIndex] = temp;
+
+                // DOM要素の並び替え
+                const items = imagePreview.querySelectorAll('.image-item');
+                const item1 = items[index];
+                const item2 = items[newIndex];
+                if (direction < 0) {
+                    imagePreview.insertBefore(item1, item2);
+                } else {
+                    imagePreview.insertBefore(item2, item1);
+                }
+
+                // データインデックスの更新
+                items.forEach((item, i) => {
+                    item.dataset.index = i;
+                });
+            }
+        }
+
+        // 画像の削除関数
+        function removeImage(index) {
+            images.splice(index, 1);
+            const items = imagePreview.querySelectorAll('.image-item');
+            items[index].remove();
+            // インデックスの更新
+            items.forEach((item, i) => {
+                if (i > index) {
+                    item.dataset.index = i - 1;
+                }
+            });
+        }
+
+        // BGMアップロード処理
+        audioInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('audio/')) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    audio = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // フェード効果を適用する関数
+        async function applyFadeTransition(ctx, canvas, currentImg, nextImg, progress) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 現在の画像を描画
+            ctx.globalAlpha = 1 - progress;
+            ctx.drawImage(currentImg, 0, 0, canvas.width, canvas.height);
+            
+            // 次の画像を描画
+            ctx.globalAlpha = progress;
+            ctx.drawImage(nextImg, 0, 0, canvas.width, canvas.height);
+            
+            // アルファ値をリセット
+            ctx.globalAlpha = 1;
+        }
+
+        async function convertToMP4(webmBlob) {
+            const { createFFmpeg, fetchFile } = FFmpeg;
+            const ffmpeg = createFFmpeg({ log: true });
+            
+            // FFmpegの読み込み
+            await ffmpeg.load();
+
+            // WebMファイルをFFmpegのファイルシステムに書き込み
+            ffmpeg.FS('writeFile', 'input.webm', await fetchFile(webmBlob));
+
+            // WebMからMP4に変換
+            await ffmpeg.run(
+                '-i', 'input.webm',
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '22',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                'output.mp4'
+            );
+
+            // 変換されたMP4ファイルを取得
+            const data = ffmpeg.FS('readFile', 'output.mp4');
+            
+            // メモリの解放
+            ffmpeg.FS('unlink', 'input.webm');
+            ffmpeg.FS('unlink', 'output.mp4');
+            await ffmpeg.exit();
+
+            return new Blob([data.buffer], { type: 'video/mp4' });
+        }
+
+        // 動画作成処理
+        createButton.addEventListener('click', async () => {
+            if (images.length === 0) {
+                alert('画像をアップロードしてください。');
+                return;
+            }
+            if (!audio) {
+                alert('BGMをアップロードしてください。');
+                return;
+            }
+
+            progress.style.display = 'block';
+            createButton.disabled = true;
+
+            try {
+                // WebM形式で一時的に動画を作成
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                const firstImg = new Image();
+                firstImg.src = images[0];
+                await new Promise(resolve => firstImg.onload = resolve);
+                
+                canvas.width = firstImg.width;
+                canvas.height = firstImg.height;
+
+                const stream = canvas.captureStream(30);
+                const mediaRecorder = new MediaRecorder(stream, {
+                    mimeType: 'video/webm;codecs=vp8,opus'
+                });
+
+                const chunks = [];
+                mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+                mediaRecorder.onstop = async () => {
+                    const webmBlob = new Blob(chunks, { type: 'video/webm' });
+                    
+                    // 変換中メッセージを表示
+                    const processingMessage = document.createElement('div');
+                    processingMessage.className = 'processing-message';
+                    processingMessage.textContent = 'WebMからMP4に変換中...';
+                    result.appendChild(processingMessage);
+
+                    try {
+                        // WebMからMP4に変換
+                        const mp4Blob = await convertToMP4(webmBlob);
+                        const videoUrl = URL.createObjectURL(mp4Blob);
+                        
+                        result.innerHTML = `
+                            <h2>完成した動画</h2>
+                            <video controls src="${videoUrl}" style="max-width: 100%"></video>
+                            <br>
+                            <a href="${videoUrl}" download="slideshow.mp4">動画をダウンロード</a>
+                        `;
+                    } catch (error) {
+                        console.error('MP4変換エラー:', error);
+                        alert('MP4への変換中にエラーが発生しました。');
+                    }
+                    
+                    progress.style.display = 'none';
+                    createButton.disabled = false;
+                };
+
+                mediaRecorder.start();
+
+                // 以下、画像処理とトランジションの部分は前回と同じ
+                const frameDuration = parseFloat(durationInput.value) * 1000;
+                const transitionDuration = 1000;
+                const fps = 30;
+
+                for (let i = 0; i < images.length; i++) {
+                    const currentImg = new Image();
+                    currentImg.src = images[i];
+                    await new Promise(resolve => currentImg.onload = resolve);
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(currentImg, 0, 0, canvas.width, canvas.height);
+                    await new Promise(resolve => setTimeout(resolve, frameDuration - transitionDuration));
+
+                    if (i < images.length - 1) {
+                        const nextImg = new Image();
+                        nextImg.src = images[i + 1];
+                        await new Promise(resolve => nextImg.onload = resolve);
+
+                        const frames = transitionDuration / (1000 / fps);
+                        for (let frame = 0; frame < frames; frame++) {
+                            const progress = frame / frames;
+                            await applyFadeTransition(ctx, canvas, currentImg, nextImg, progress);
+                            await new Promise(resolve => setTimeout(resolve, 1000 / fps));
+                        }
+                    }
+                }
+
+                mediaRecorder.stop();
+
+            } catch (error) {
+                console.error('動画作成エラー:', error);
+                alert('動画の作成中にエラーが発生しました。');
+                progress.style.display = 'none';
+                createButton.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
