@@ -287,28 +287,17 @@
                 mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
                 mediaRecorder.onstop = async () => {
                     const webmBlob = new Blob(chunks, { type: 'video/webm' });
+                    const videoUrl = URL.createObjectURL(webmBlob);
                     
-                    // 変換中メッセージを表示
-                    const processingMessage = document.createElement('div');
-                    processingMessage.className = 'processing-message';
-                    processingMessage.textContent = 'WebMからMP4に変換中...';
-                    result.appendChild(processingMessage);
-
-                    try {
-                        // WebMからMP4に変換
-                        const mp4Blob = await convertToMP4(webmBlob);
-                        const videoUrl = URL.createObjectURL(mp4Blob);
-                        
-                        result.innerHTML = `
-                            <h2>完成した動画</h2>
-                            <video controls src="${videoUrl}" style="max-width: 100%"></video>
-                            <br>
-                            <a href="${videoUrl}" download="slideshow.mp4">動画をダウンロード</a>
-                        `;
-                    } catch (error) {
-                        console.error('MP4変換エラー:', error);
-                        alert('MP4への変換中にエラーが発生しました。');
-                    }
+                    result.innerHTML = `
+                        <h2>完成した動画</h2>
+                        <video controls src="${videoUrl}" style="max-width: 100%"></video>
+                        <br>
+                        <a href="${videoUrl}" download="slideshow.webm">動画をダウンロード</a>
+                        <p>※ 動画はWebM形式で保存されます。MP4への変換が必要な場合は、
+                        <a href="https://cloudconvert.com/webm-to-mp4" target="_blank">オンライン変換ツール</a>
+                        をご利用ください。</p>
+                    `;
                     
                     progress.style.display = 'none';
                     createButton.disabled = false;
