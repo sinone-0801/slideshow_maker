@@ -109,13 +109,24 @@
         new Sortable(imagePreview, {
             animation: 150,
             ghostClass: 'sortable-ghost',
-            onSort: () => {
-                // 並び替え後に画像配列を更新
-                const newImages = [];
-                imagePreview.querySelectorAll('.image-item').forEach(item => {
-                    newImages.push(images[parseInt(item.dataset.index)]);
+            onSort: (evt) => {
+                // DOM要素の新しい順序に基づいて画像配列を再構築
+                const newImages = Array.from(imagePreview.querySelectorAll('.image-item')).map(item => {
+                    return images[parseInt(item.dataset.index)];
                 });
-                images = newImages;
+                images = [...newImages];
+                
+                // データインデックスを更新
+                imagePreview.querySelectorAll('.image-item').forEach((item, index) => {
+                    item.dataset.index = index;
+                    
+                    // コントロールボタンも更新
+                    item.querySelector('.image-controls').innerHTML = `
+                        <button onclick="moveImage(${index}, -1)">↑</button>
+                        <button onclick="moveImage(${index}, 1)">↓</button>
+                        <button onclick="removeImage(${index})">×</button>
+                    `;
+                });
             }
         });
 
@@ -158,24 +169,29 @@
         function moveImage(index, direction) {
             const newIndex = index + direction;
             if (newIndex >= 0 && newIndex < images.length) {
-                // 画像配列の並び替え
-                const temp = images[index];
-                images[index] = images[newIndex];
-                images[newIndex] = temp;
-
-                // DOM要素の並び替え
+                // DOM要素の取得
                 const items = imagePreview.querySelectorAll('.image-item');
                 const item1 = items[index];
                 const item2 = items[newIndex];
+                
+                // 画像配列の並び替え
+                [images[index], images[newIndex]] = [images[newIndex], images[index]];
+                
+                // DOM要素の並び替え
                 if (direction < 0) {
                     imagePreview.insertBefore(item1, item2);
                 } else {
                     imagePreview.insertBefore(item2, item1);
                 }
-
-                // データインデックスの更新
+                
+                // すべてのインデックスとコントロールを更新
                 items.forEach((item, i) => {
                     item.dataset.index = i;
+                    item.querySelector('.image-controls').innerHTML = `
+                        <button onclick="moveImage(${i}, -1)">↑</button>
+                        <button onclick="moveImage(${i}, 1)">↓</button>
+                        <button onclick="removeImage(${i})">×</button>
+                    `;
                 });
             }
         }
@@ -185,13 +201,20 @@
             images.splice(index, 1);
             const items = imagePreview.querySelectorAll('.image-item');
             items[index].remove();
-            // インデックスの更新
+            
+            // 残りの要素のインデックスとコントロールを更新
             items.forEach((item, i) => {
                 if (i > index) {
                     item.dataset.index = i - 1;
+                    item.querySelector('.image-controls').innerHTML = `
+                        <button onclick="moveImage(${i - 1}, -1)">↑</button>
+                        <button onclick="moveImage(${i - 1}, 1)">↓</button>
+                        <button onclick="removeImage(${i - 1})">×</button>
+                    `;
                 }
             });
         }
+
 
         // BGMアップロード処理
         audioInput.addEventListener('change', (e) => {
